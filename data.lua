@@ -1,3 +1,5 @@
+require("util")
+
 function printTable(t, prefix)
   if not prefix then
     prefix = ""
@@ -20,7 +22,11 @@ end
 
 function patchTable(t1, t2)
 	for k,v in pairs(t2) do
-		t1[k] = v
+    if type(v) == "table" then
+      t1[k] = table.deepcopy(v)
+    else
+		  t1[k] = v
+    end
 	end
 end
 
@@ -46,95 +52,87 @@ function recDeleteKey(t, key)
   end
 end
 
-local prefix = "__NewOldConcrete__/"
+function patchNewConcrete()
+  patchTable(concrete.variants, require("prototypes.oldConcrete"))
 
-local con = data.raw.tile["concrete"]
+  recReplaceVal(concrete.transitions, "__base__/graphics/terrain/water-transitions/concrete.png", "__base__/graphics/terrain/water-transitions/grass.png")
+  recReplaceVal(concrete.transitions_between_transitions, "__base__/graphics/terrain/water-transitions/concrete-transitions.png", prefix .. "graphics/transitions/grass-transition.png")
 
-patchTable(con.variants, {
-  inner_corner =
-  {
-    picture = prefix .. "graphics/concrete-inner-corner.png",
-    count = 16,
-  },
-  inner_corner_mask =
-  {
-    picture = prefix .. "graphics/concrete-inner-corner-mask.png",
-    count = 16,
-  },
+  recDeleteKey(concrete.transitions, "hr_version")
+  recDeleteKey(concrete.transitions_between_transitions, "hr_version")
+end
 
-  outer_corner =
-  {
-    picture = prefix .. "graphics/concrete-outer-corner.png",
-    count = 8,
-  },
-  outer_corner_mask =
-  {
-    picture = prefix .. "graphics/concrete-outer-corner-mask.png",
-    count = 8,
-  },
+function patchNewHazardConcrete()
+  local hConLeft = data.raw.tile["hazard-concrete-left"]
+  local hConRight = data.raw.tile["hazard-concrete-right"]
 
-  side =
-  {
-    picture = prefix .. "graphics/concrete-side.png",
-    count = 16,
-  },
-  side_mask =
-  {
-    picture = prefix .. "graphics/concrete-side-mask.png",
-    count = 16,
-  },
+  patchTable(hConLeft.variants, {
+    material_background =
+    {
+      picture = prefix .. "graphics/hazard/hazard-concrete-left.png",
+      count = 8,
+    },
+  })
 
-  u_transition =
-  {
-    picture = prefix .. "graphics/concrete-u.png",
-    count = 8,
-  },
-  u_transition_mask =
-  {
-    picture = prefix .. "graphics/concrete-u-mask.png",
-    count = 8,
-  },
+  patchTable(hConRight.variants, {
+    material_background =
+    {
+      picture = prefix .. "graphics/hazard/hazard-concrete-right.png",
+      count = 8,
+    },
+  })
+end
 
-  o_transition =
-  {
-    picture = prefix .. "graphics/concrete-o.png",
-    count = 1,
-  },
-  o_transition_mask =
-  {
-    picture = prefix .. "graphics/concrete-o-mask.png",
-    count = 1,
-  },
+function replaceStonePathWithNewConcrete()
+  patchTable(stonePath, {
+    variants = concrete.variants,
+    transitions = concrete.transitions,
+    transitions_between_transitions = concrete.transitions_between_transitions,
+    transition_overlay_layer_offset = concrete.transition_overlay_layer_offset,
+  })
+end
 
-  material_background =
-  {
-    picture = prefix .. "graphics/concrete.png",
-    count = 8,
-  },
-})
+function addUnderNewName(t, name, iconPath, patches)
+  local tile = table.deepcopy(t)
 
-recReplaceVal(con.transitions, "__base__/graphics/terrain/water-transitions/concrete.png", "__base__/graphics/terrain/water-transitions/grass.png")
-recReplaceVal(con.transitions_between_transitions, "__base__/graphics/terrain/water-transitions/concrete-transitions.png", prefix .. "graphics/transitions/grass-transition.png")
+  tile.name = name
+  if patches then
+    patchTable(tc, patches)
+  end
 
-recDeleteKey(con.transitions, "hr_version")
-recDeleteKey(con.transitions_between_transitions, "hr_version")
+  local item = require("prototypes.tile_item")
+  item.icon = iconPath
+
+  local recipe = require("prototypes.tile_recipe")
+
+  data:extend({tile, item, recipe})
+end
+
+function getStrSettingInt(setting)
+  local str = settings.startup[setting].value
+  return tonumber(str:match("^%d+"))
+end
 
 
-local hConLeft = data.raw.tile["hazard-concrete-left"]
-local hConRight = data.raw.tile["hazard-concrete-right"]
+----------------------------------------------------------------------
 
-patchTable(hConLeft.variants, {
-  material_background =
-  {
-    picture = prefix .. "graphics/hazard/hazard-concrete-left.png",
-    count = 8,
-  },
-})
 
-patchTable(hConRight.variants, {
-  material_background =
-  {
-    picture = prefix .. "graphics/hazard/hazard-concrete-right.png",
-    count = 8,
-  },
-})
+prefix = "__NewOldConcrete__/"
+concrete = data.raw.tile["concrete"]
+stonePath = data.raw.tile["stone-path"]
+
+local newConOptn = getStrSettingInt("NewOldConcrete-new-concrete-graphics")
+
+if newConOptn == 2 then
+  replaceStonePathWithNewConcrete()
+
+elseif newConOptn == 3 then
+  addUnderNewName(stonePath, "NewOldConcrete-cobblestone-path", prefix .. "graphics/icons/newStone.png")
+  replaceStonePathWithNewConcrete()
+
+elseif newConOptn == 4 then
+  addUnderNewName(concrete, "NewOldConcrete-cobblestone-path", prefix .. "graphics/icons/newConcrete.png")
+end
+
+patchNewConcrete()
+patchNewHazardConcrete()
